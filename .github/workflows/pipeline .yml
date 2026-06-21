@@ -1,12 +1,11 @@
-name: tourism project predictions 
+name: Tourism Project Predictions
 
 on:
   push:
     branches:
-      - main  # Automatically triggers on push to the main branch
+      - main
 
 jobs:
-
   register-dataset:
     runs-on: ubuntu-latest
     steps:
@@ -30,8 +29,7 @@ jobs:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: python tourism_project/model_building/prep.py
 
-
-  model-traning:
+  model-training:
     needs: data-prep
     runs-on: ubuntu-latest
     steps:
@@ -40,17 +38,17 @@ jobs:
         run: pip install -r tourism_project/requirements.txt
       - name: Start MLflow Server
         run: |
-          nohup mlflow ui --host 0.0.0.0 --port 5000 &  # Run MLflow UI in the background
-          sleep 5  # Wait for a moment to let the server starts
-      - name: Model Building
+          nohup mlflow ui --host 0.0.0.0 --port 5000 --backend-store-uri ./mlruns &
+          sleep 10
+      - name: Model Training
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: python tourism_project/model_building/train.py
 
-
   deploy-hosting:
     runs-on: ubuntu-latest
-    needs: [model-traning,data-prep,register-dataset]
+    needs: [model-training, data-prep, register-dataset]
+    if: success()
     steps:
       - uses: actions/checkout@v4
       - name: Install Dependencies
@@ -59,4 +57,3 @@ jobs:
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: python tourism_project/hosting/hosting.py
-
