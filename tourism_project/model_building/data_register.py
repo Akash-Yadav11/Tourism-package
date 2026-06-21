@@ -3,6 +3,15 @@ from huggingface_hub.utils import RepositoryNotFoundError
 import os
 
 
+token = os.getenv("HF_TOKEN")
+
+print("Token exists:", token is not None)
+
+if token:
+    print("Length:", len(token))
+    print("Starts with hf_:", token.startswith("hf_"))
+    print("Repr:", repr(token[:10]))
+    
 api = HfApi(token=os.getenv("HF_TOKEN"))
 
 repo_id = "akashyadav2005/tourism_project"
