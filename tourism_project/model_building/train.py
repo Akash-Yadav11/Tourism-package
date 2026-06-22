@@ -1,39 +1,41 @@
-# for data manipulation
+# Step 1: Write the correct train.py file
+%%writefile tourism_project/model_building/train.py
 import pandas as pd
+import os
+import joblib
+import xgboost as xgb
+import mlflow
+
+from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
 from sklearn.compose import make_column_transformer
 from sklearn.pipeline import make_pipeline
-# for model training, tuning, and evaluation
-import xgboost as xgb
-from sklearn.model_selection import GridSearchCV
-from sklearn.metrics import accuracy_score, classification_report, recall_score
-# for model serialization
-import joblib
-# for creating a folder
-import os
-# for hugging face space authentication to upload files
-from huggingface_hub import login, HfApi, create_repo
-from huggingface_hub.utils import RepositoryNotFoundError, HfHubHTTPError
-import mlflow
+from sklearn.metrics import classification_report
 
-mlflow.set_tracking_uri("http://localhost:5000")
-mlflow.set_experiment("mlops-training-experiment")
+print("=" * 60)
+print("TOURISM PACKAGE MODEL TRAINING")
+print("=" * 60)
 
-api = HfApi()
+# Load dataset from Hugging Face
+print("\n📥 Loading dataset from Hugging Face...")
+DATA_PATH = "hf://datasets/akashyadav2005/tourism_project/tourism.csv"
+df = pd.read_csv(DATA_PATH)
+print(f"✅ Dataset loaded: {df.shape[0]} rows, {df.shape[1]} columns")
 
+# Clean
+df.drop(columns=['Unnamed: 0', 'CustomerID'], inplace=True, errors='ignore')
 
-Xtrain_path = "hf://datasets/akashyadav2005/tourism_project/Xtrain.csv"
-Xtest_path = "hf://datasets/akashyadav2005/tourism_project/Xtest.csv"
-ytrain_path = "hf://datasets/akashyadav2005/tourism_project/ytrain.csv"
-ytest_path = "hf://datasets/akashyadav2005/tourism_project/ytest.csv"
+target_col = "ProdTaken"
+X = df.drop(columns=[target_col])
+y = df[target_col]
 
-Xtrain = pd.read_csv(Xtrain_path)
-Xtest = pd.read_csv(Xtest_path)
-ytrain = pd.read_csv(ytrain_path)
-ytest = pd.read_csv(ytest_path)
+# Split
+Xtrain, Xtest, ytrain, ytest = train_test_split(
+    X, y, test_size=0.2, random_state=42
+)
+print(f"✅ Train: {Xtrain.shape[0]} samples, Test: {Xtest.shape[0]} samples")
 
-
-# One-hot encode 'Type' and scale numeric features
+# Features
 numeric_features = [
     'Age','CityTier','DurationOfPitch','NumberOfPersonVisiting',
     'NumberOfFollowups','PreferredPropertyStar','NumberOfTrips',
@@ -46,105 +48,93 @@ categorical_features = [
     'ProductPitched','MaritalStatus','Designation'
 ]
 
-# Set the clas weight to handle class imbalance
-class_weight = ytrain.value_counts()[0] / ytrain.value_counts()[1]
-class_weight
+print(f"\n📊 Features:")
+print(f"  Numeric: {len(numeric_features)}")
+print(f"  Categorical: {len(categorical_features)}")
 
-# Define the preprocessing steps
+# Preprocessing
 preprocessor = make_column_transformer(
     (StandardScaler(), numeric_features),
-    (OneHotEncoder(handle_unknown='ignore'), categorical_features)
+    (OneHotEncoder(handle_unknown="ignore"), categorical_features)
 )
 
-# Define base XGBoost model
-xgb_model = xgb.XGBClassifier(scale_pos_weight=class_weight, random_state=42)
+# Model
+model = xgb.XGBClassifier(random_state=42)
 
-# Define hyperparameter grid
+# Pipeline
+pipeline = make_pipeline(preprocessor, model)
+
+# Hyperparameter grid
 param_grid = {
-    'xgbclassifier__n_estimators': [50, 75, 100],
-    'xgbclassifier__max_depth': [2, 3, 4],
-    'xgbclassifier__colsample_bytree': [0.4, 0.5, 0.6],
-    'xgbclassifier__colsample_bylevel': [0.4, 0.5, 0.6],
-    'xgbclassifier__learning_rate': [0.01, 0.05, 0.1],
-    'xgbclassifier__reg_lambda': [0.4, 0.5, 0.6],
+    "xgbclassifier__n_estimators": [50, 100],
+    "xgbclassifier__max_depth": [3, 5],
+    "xgbclassifier__learning_rate": [0.01, 0.1]
 }
 
-# Model pipeline
-model_pipeline = make_pipeline(preprocessor, xgb_model)
+# Set MLflow
+mlflow.set_tracking_uri("http://localhost:5000")
+mlflow.set_experiment("mlops-training-experiment")
 
-# Start MLflow run
-with mlflow.start_run():
-    # Hyperparameter tuning
-    grid_search = GridSearchCV(model_pipeline, param_grid, cv=5, n_jobs=-1)
-    grid_search.fit(Xtrain, ytrain)
+print("\n" + "=" * 60)
+print("STARTING TRAINING")
+print("=" * 60)
 
-    # Log all parameter combinations and their mean test scores
-    results = grid_search.cv_results_
-    for i in range(len(results['params'])):
-        param_set = results['params'][i]
-        mean_score = results['mean_test_score'][i]
-        std_score = results['std_test_score'][i]
+with mlflow.start_run() as run:
+    print(f"\n🔬 MLflow Run ID: {run.info.run_id}")
+    
+    print("\n🔄 Running GridSearchCV...")
+    grid = GridSearchCV(pipeline, param_grid, cv=3, n_jobs=-1, verbose=1)
+    grid.fit(Xtrain, ytrain)
 
-        # Log each combination as a separate MLflow run
-        with mlflow.start_run(nested=True):
-            mlflow.log_params(param_set)
-            mlflow.log_metric("mean_test_score", mean_score)
-            mlflow.log_metric("std_test_score", std_score)
+    best_model = grid.best_estimator_
+    print(f"\n✅ Best parameters: {grid.best_params_}")
 
-    # Log best parameters separately in main run
-    mlflow.log_params(grid_search.best_params_)
+    preds = best_model.predict(Xtest)
+    report = classification_report(ytest, preds, output_dict=True)
 
-    # Store and evaluate the best model
-    best_model = grid_search.best_estimator_
-
-    classification_threshold = 0.45
-
-    y_pred_train_proba = best_model.predict_proba(Xtrain)[:, 1]
-    y_pred_train = (y_pred_train_proba >= classification_threshold).astype(int)
-
-    y_pred_test_proba = best_model.predict_proba(Xtest)[:, 1]
-    y_pred_test = (y_pred_test_proba >= classification_threshold).astype(int)
-
-    train_report = classification_report(ytrain, y_pred_train, output_dict=True)
-    test_report = classification_report(ytest, y_pred_test, output_dict=True)
-
-    # Log the metrics for the best model
+    mlflow.log_params(grid.best_params_)
     mlflow.log_metrics({
-        "train_accuracy": train_report['accuracy'],
-        "train_precision": train_report['1']['precision'],
-        "train_recall": train_report['1']['recall'],
-        "train_f1-score": train_report['1']['f1-score'],
-        "test_accuracy": test_report['accuracy'],
-        "test_precision": test_report['1']['precision'],
-        "test_recall": test_report['1']['recall'],
-        "test_f1-score": test_report['1']['f1-score']
+        "accuracy": report["accuracy"],
+        "precision": report["1"]["precision"],
+        "recall": report["1"]["recall"],
+        "f1": report["1"]["f1-score"]
     })
 
-    # Save the model locally
+    # Save model
     model_path = "best_tourism_project_model_v1.joblib"
     joblib.dump(best_model, model_path)
-
-    # Log the model artifact
     mlflow.log_artifact(model_path, artifact_path="model")
-    print(f"Model saved as artifact at: {model_path}")
+    
+    print(f"\n📊 Results:")
+    print(f"  Test Accuracy: {report['accuracy']:.4f}")
+    print(f"  Test Precision: {report['1']['precision']:.4f}")
+    print(f"  Test Recall: {report['1']['recall']:.4f}")
+    print(f"  Test F1: {report['1']['f1-score']:.4f}")
+    print(f"\n✅ Model saved to {model_path}")
 
     # Upload to Hugging Face
-    repo_id = "akashyadav2005/tourism_project_model"
-    repo_type = "model"
-
-    # Step 1: Check if the space exists
     try:
-        api.repo_info(repo_id=repo_id, repo_type=repo_type)
-        print(f"Space '{repo_id}' already exists. Using it.")
-    except RepositoryNotFoundError:
-        print(f"Space '{repo_id}' not found. Creating new space...")
-        create_repo(repo_id=repo_id, repo_type=repo_type, private=False)
-        print(f"Space '{repo_id}' created.")
+        from huggingface_hub import HfApi, create_repo
+        from huggingface_hub.utils import RepositoryNotFoundError
+        
+        api = HfApi(token=os.getenv("HF_TOKEN"))
+        repo_id = "akashyadav2005/tourism_project_model"
+        repo_type = "model"
+        
+        try:
+            api.repo_info(repo_id=repo_id, repo_type=repo_type)
+            print(f"\n✅ Repository '{repo_id}' exists.")
+        except RepositoryNotFoundError:
+            print(f"\nCreating repository '{repo_id}'...")
+            create_repo(repo_id=repo_id, repo_type=repo_type, private=False)
+        
+        api.upload_file(
+            path_or_fileobj=model_path,
+            path_in_repo=model_path,
+            repo_id=repo_id,
+            repo_type=repo_type,
+        )
+        print(f"✅ Model uploaded to: https://huggingface.co/{repo_id}")
+    except Exception as e:
+        print(f"⚠️ Upload failed: {e}")
 
-    # create_repo("churn-model", repo_type="model", private=False)
-    api.upload_file(
-        path_or_fileobj="best_tourism_project_model_v1.joblib",
-        path_in_repo="best_tourism_project_model_v1.joblib",
-        repo_id=repo_id,
-        repo_type=repo_type,
-    )
