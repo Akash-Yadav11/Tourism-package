@@ -70,4 +70,4 @@ jobs:
       - name: Push Files to Hugging Face Space
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: python visit_with_us/hosting/hosting.py
+        run: python tourism_project/hosting/hosting.py
