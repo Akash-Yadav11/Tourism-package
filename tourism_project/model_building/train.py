@@ -1,5 +1,3 @@
-# Step 1: Write the correct train.py file
-%%writefile tourism_project/model_building/train.py
 import pandas as pd
 import os
 import joblib
@@ -138,3 +136,6 @@ with mlflow.start_run() as run:
     except Exception as e:
         print(f"⚠️ Upload failed: {e}")
 
+print("\n" + "=" * 60)
+print("✅ TRAINING COMPLETED SUCCESSFULLY!")
+print("=" * 60)
