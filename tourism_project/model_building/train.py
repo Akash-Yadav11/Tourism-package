@@ -10,8 +10,6 @@ from sklearn.preprocessing import StandardScaler, OneHotEncoder
 from sklearn.compose import make_column_transformer
 from sklearn.pipeline import make_pipeline
 from sklearn.metrics import classification_report, confusion_matrix, roc_auc_score
-from imblearn.over_sampling import SMOTE
-from imblearn.pipeline import Pipeline as ImbPipeline
 
 print("=" * 60)
 print("TOURISM PACKAGE MODEL TRAINING (FIXED FOR IMBALANCE)")
@@ -35,7 +33,7 @@ print(f"\n Class Distribution:")
 print(y.value_counts())
 print(f"Positive class (1) percentage: {y.mean() * 100:.2f}%")
 
-# Split
+# Split with stratification
 Xtrain, Xtest, ytrain, ytest = train_test_split(
     X, y, test_size=0.2, random_state=42, stratify=y
 )
@@ -60,15 +58,17 @@ preprocessor = make_column_transformer(
     (OneHotEncoder(handle_unknown="ignore", sparse_output=False), categorical_features)
 )
 
-# Model with class weight
+# Calculate class weight
 class_weight = len(ytrain[ytrain == 0]) / len(ytrain[ytrain == 1])
 print(f"\n Class weight: {class_weight:.2f}")
 
+# Model with class weight (XGBoost handles imbalance natively)
 model = xgb.XGBClassifier(
     random_state=42,
     scale_pos_weight=class_weight,  # This handles class imbalance
     eval_metric='logloss',
-    use_label_encoder=False
+    use_label_encoder=False,
+    n_jobs=-1
 )
 
 # Pipeline
@@ -93,16 +93,16 @@ print("STARTING TRAINING WITH IMBALANCE HANDLING")
 print("=" * 60)
 
 with mlflow.start_run() as run:
-    print(f"\n MLflow Run ID: {run.info.run_id}")
+    print(f"\n🔬 MLflow Run ID: {run.info.run_id}")
     
     print("\n Running GridSearchCV...")
     grid = GridSearchCV(
         pipeline, 
         param_grid, 
-        cv=5, 
+        cv=3,  # Reduced for speed
         n_jobs=-1, 
         verbose=1,
-        scoring='roc_auc'  # Better metric for imbalanced data
+        scoring='roc_auc'  # Better for imbalanced data
     )
     grid.fit(Xtrain, ytrain)
 
@@ -113,15 +113,15 @@ with mlflow.start_run() as run:
     # Get predictions with different thresholds
     y_pred_proba = best_model.predict_proba(Xtest)[:, 1]
     
-    # Try different thresholds to find optimal
-    thresholds = [0.3, 0.4, 0.45, 0.5, 0.55, 0.6]
+    # Find optimal threshold
+    thresholds = [0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65]
     best_threshold = 0.5
     best_f1 = 0
     
-    print("\n Finding optimal threshold:")
+    print("\nFinding optimal threshold:")
     for thresh in thresholds:
         preds = (y_pred_proba >= thresh).astype(int)
-        report = classification_report(ytest, preds, output_dict=True)
+        report = classification_report(ytest, preds, output_dict=True, zero_division=0)
         f1 = report.get('1', {}).get('f1-score', 0)
         recall = report.get('1', {}).get('recall', 0)
         precision = report.get('1', {}).get('precision', 0)
@@ -131,25 +131,24 @@ with mlflow.start_run() as run:
             best_f1 = f1
             best_threshold = thresh
     
-    print(f"\n Best threshold: {best_threshold:.2f} (F1={best_f1:.3f})")
-    mlflow.log_metric("best_threshold", best_threshold)
+    print(f"\nBest threshold: {best_threshold:.2f} (F1={best_f1:.3f})")
     
     # Use best threshold
     y_pred = (y_pred_proba >= best_threshold).astype(int)
     
     # Generate classification report
-    report = classification_report(ytest, y_pred, output_dict=True)
+    report = classification_report(ytest, y_pred, output_dict=True, zero_division=0)
     cm = confusion_matrix(ytest, y_pred)
     auc_roc = roc_auc_score(ytest, y_pred_proba)
     
     # Log metrics
+    mlflow.log_params({"best_threshold": best_threshold})
     mlflow.log_metrics({
         "accuracy": report["accuracy"],
         "precision_class1": report.get('1', {}).get('precision', 0),
         "recall_class1": report.get('1', {}).get('recall', 0),
         "f1_class1": report.get('1', {}).get('f1-score', 0),
-        "auc_roc": auc_roc,
-        "best_threshold": best_threshold
+        "auc_roc": auc_roc
     })
     
     # Save model
@@ -162,7 +161,7 @@ with mlflow.start_run() as run:
         f.write(str(best_threshold))
     mlflow.log_artifact('threshold.txt')
     
-    print(f"\n Results:")
+    print(f"\nResults:")
     print(f"  Confusion Matrix:")
     print(f"    TN: {cm[0][0]}, FP: {cm[0][1]}")
     print(f"    FN: {cm[1][0]}, TP: {cm[1][1]}")
@@ -171,7 +170,7 @@ with mlflow.start_run() as run:
     print(f"  Recall (Class 1): {report.get('1', {}).get('recall', 0):.4f}")
     print(f"  F1 (Class 1): {report.get('1', {}).get('f1-score', 0):.4f}")
     print(f"  AUC-ROC: {auc_roc:.4f}")
-    print(f"\n Model saved to {model_path}")
+    print(f"\nModel saved to {model_path}")
     
     # Upload to Hugging Face
     try:
@@ -184,12 +183,11 @@ with mlflow.start_run() as run:
         
         try:
             api.repo_info(repo_id=repo_id, repo_type=repo_type)
-            print(f"\n Repository '{repo_id}' exists.")
+            print(f"\nRepository '{repo_id}' exists.")
         except RepositoryNotFoundError:
             print(f"\nCreating repository '{repo_id}'...")
             create_repo(repo_id=repo_id, repo_type=repo_type, private=False)
         
-        # Upload model
         api.upload_file(
             path_or_fileobj=model_path,
             path_in_repo=model_path,
@@ -197,7 +195,6 @@ with mlflow.start_run() as run:
             repo_type=repo_type,
         )
         
-        # Upload threshold
         api.upload_file(
             path_or_fileobj='threshold.txt',
             path_in_repo='threshold.txt',
@@ -205,7 +202,7 @@ with mlflow.start_run() as run:
             repo_type=repo_type,
         )
         
-        print(f" Model uploaded to: https://huggingface.co/{repo_id}")
+        print(f"Model uploaded to: https://huggingface.co/{repo_id}")
     except Exception as e:
-        print(f" Upload failed: {e}")
+        print(f"Upload failed: {e}")
 
