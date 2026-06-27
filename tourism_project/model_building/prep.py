@@ -1,4 +1,4 @@
-%%writefile tourism_project_v2/model_building/prep.py
+%%writefile tourism_project/model_building/prep.py
 
 # for data manipulation
 import pandas as pd
@@ -15,7 +15,7 @@ from huggingface_hub import HfApi
 api = HfApi(token=os.getenv("HF_TOKEN"))
 
 # Load dataset
-DATASET_PATH = "hf://datasets/akashyadav2005/tourism_project_v2/tourism.csv"
+DATASET_PATH = "hf://datasets/akashyadav2005/tourism_project/tourism.csv"
 df = pd.read_csv(DATASET_PATH)
 print("Dataset loaded successfully.")
 
@@ -49,6 +49,6 @@ for file_path in files:
     api.upload_file(
         path_or_fileobj=file_path,
         path_in_repo=file_path.split("/")[-1],
-        repo_id="akashyadav2005/tourism_project_v2",
+        repo_id="akashyadav2005/tourism_project_",
         repo_type="dataset",
     )
