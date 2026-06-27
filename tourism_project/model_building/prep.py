@@ -1,3 +1,4 @@
+%%writefile tourism_project_v2/model_building/prep.py
 
 # for data manipulation
 import pandas as pd
@@ -14,7 +15,7 @@ from huggingface_hub import HfApi
 api = HfApi(token=os.getenv("HF_TOKEN"))
 
 # Load dataset
-DATASET_PATH = "hf://datasets/akashyadav2005/tourism_project/tourism.csv"
+DATASET_PATH = "hf://datasets/akashyadav2005/tourism_project_v2/tourism.csv"
 df = pd.read_csv(DATASET_PATH)
 print("Dataset loaded successfully.")
 
@@ -22,17 +23,6 @@ print("Dataset loaded successfully.")
 df.drop(columns=['Unnamed: 0', 'CustomerID'], inplace=True)
 
 
-# DUMMY ENCODING (ONE-HOT)
-categorical_cols = [
-    'TypeofContact',
-    'Occupation',
-    'Gender',
-    'ProductPitched',
-    'MaritalStatus',
-    'Designation'
-]
-
-df = pd.get_dummies(df, columns=categorical_cols, drop_first=True)
 
 # Target variable
 target_col = 'ProdTaken'
@@ -59,6 +49,6 @@ for file_path in files:
     api.upload_file(
         path_or_fileobj=file_path,
         path_in_repo=file_path.split("/")[-1],
-        repo_id="akashyadav2005/tourism_project",
+        repo_id="akashyadav2005/tourism_project_v2",
         repo_type="dataset",
     )
