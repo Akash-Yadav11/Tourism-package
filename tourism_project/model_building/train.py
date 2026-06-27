@@ -1,4 +1,4 @@
-%%writefile tourism_project_v2/model_building/train.py
+%%writefile tourism_project/model_building/train.py
 # for data manipulation
 import pandas as pd
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
@@ -23,10 +23,10 @@ mlflow.set_experiment("mlops-training-experiment")
 api = HfApi()
 
 
-Xtrain_path = "hf://datasets/akashyadav2005/tourism_project_v2/Xtrain.csv"
-Xtest_path = "hf://datasets/akashyadav2005/tourism_project_v2/Xtest.csv"
-ytrain_path = "hf://datasets/akashyadav2005/tourism_project_v2/ytrain.csv"
-ytest_path = "hf://datasets/akashyadav2005/tourism_project_v2/ytest.csv"
+Xtrain_path = "hf://datasets/akashyadav2005/tourism_project/Xtrain.csv"
+Xtest_path = "hf://datasets/akashyadav2005/tourism_project/Xtest.csv"
+ytrain_path = "hf://datasets/akashyadav2005/tourism_project/ytrain.csv"
+ytest_path = "hf://datasets/akashyadav2005/tourism_project/ytest.csv"
 
 Xtrain = pd.read_csv(Xtrain_path)
 Xtest = pd.read_csv(Xtest_path)
@@ -134,7 +134,7 @@ with mlflow.start_run():
     })
 
     # Save the model locally
-    model_path = "best_tourism_project_v2_model_v1.joblib"
+    model_path = "best_tourism_project_model_v1.joblib"
     joblib.dump(best_model, model_path)
 
     # Log the model artifact
@@ -142,7 +142,7 @@ with mlflow.start_run():
     print(f"Model saved as artifact at: {model_path}")
 
     # Upload to Hugging Face
-    repo_id = "akashyadav2005/tourism_project_v2_model"
+    repo_id = "akashyadav2005/tourism_project_model"
     repo_type = "model"
 
     # Step 1: Check if the space exists
@@ -156,8 +156,8 @@ with mlflow.start_run():
 
     # create_repo("churn-model", repo_type="model", private=False)
     api.upload_file(
-        path_or_fileobj="best_tourism_project_v2_model_v1.joblib",
-        path_in_repo="best_tourism_project_v2_model_v1.joblib",
+        path_or_fileobj="best_tourism_project_model_v1.joblib",
+        path_in_repo="best_tourism_project_model_v1.joblib",
         repo_id=repo_id,
         repo_type=repo_type,
     )
