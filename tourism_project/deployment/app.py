@@ -1,26 +1,17 @@
+%%writefile tourism_project/deployment/app.py
 import streamlit as st
 import pandas as pd
 from huggingface_hub import hf_hub_download
 import joblib
 
-# Load trained model
+# Load trained model (change repo/filename if needed)
 model_path = hf_hub_download(
     repo_id="akashyadav2005/tourism_project_model",
     filename="best_tourism_project_model_v1.joblib"
 )
 model = joblib.load(model_path)
 
-# Load threshold
-try:
-    threshold_path = hf_hub_download(
-        repo_id="akashyadav2005/tourism_project_model",
-        filename="threshold.txt"
-    )
-    with open(threshold_path, 'r') as f:
-        threshold = float(f.read().strip())
-except:
-    threshold = 0.45  # Default fallback
-
+# App UI
 st.title("Tourism Purchase Prediction App")
 st.write("""
 This app predicts whether a customer will take the travel product package.
@@ -47,7 +38,7 @@ children_visiting = st.number_input("Number of Children Visiting", 0, 5, 0)
 designation = st.selectbox("Designation", ["Executive", "Manager", "Senior Manager", "AVP", "VP"])
 monthly_income = st.number_input("Monthly Income", 1000.0, 100000.0, 20000.0)
 
-# Assemble input
+# Assemble input into DataFrame
 input_data = pd.DataFrame([{
     "Age": age,
     "TypeofContact": type_of_contact,
@@ -70,27 +61,9 @@ input_data = pd.DataFrame([{
 }])
 
 if st.button("Predict Purchase"):
-    # Get probability
-    probability = model.predict_proba(input_data)[0][1]
-    
-    # Apply threshold
-    prediction = 1 if probability >= threshold else 0
-    
-    # Show probability
+    prediction = model.predict(input_data)[0]
+
+    result = "Customer WILL take the package" if prediction == 1 else "Customer will NOT take the package"
+
     st.subheader("Prediction Result:")
-    st.write(f"**Probability of taking package:** {probability:.2%}")
-    st.write(f"**Threshold used:** {threshold:.2f}")
-    
-    if prediction == 1:
-        st.success(" Customer WILL take the package!")
-        st.balloons()
-    else:
-        st.error(" Customer will NOT take the package")
-    
-    # Show confidence
-    if probability >= 0.7:
-        st.info(" High confidence prediction")
-    elif probability >= 0.4:
-        st.warning(" Moderate confidence prediction")
-    else:
-        st.warning(" Low confidence prediction")
+    st.success(result)
